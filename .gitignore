@@ -4,7 +4,8 @@ deps
 *.beam
 *.plt
 erl_crash.dump
-ebin/*.beam
+ebin/*
+inet_tcp_proxy.d
 rel/example_project
 .concrete/DEV_MODE
 .rebar
