@@ -1,0 +1,23 @@
+# vim:sw=2:et:
+
+dist: xenial
+sudo: false
+language: erlang
+notifications:
+  email:
+    recipients:
+      - alerts@rabbitmq.com
+    on_success: never
+    on_failure: always
+cache:
+  apt: true
+
+otp_release:
+  - "21.3"
+  - "22.0"
+  - "22.2"
+
+script:
+  - make
+  - make xref
+  - make check
