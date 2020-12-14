@@ -60,7 +60,6 @@
     initiated = false :: boolean(),
 
     dhandle = undefined :: any(),
-    output_buf = [] :: iodata(),
     input_buf = [] :: iodata(),
     node = undefined :: atom() | undefined
 }).
@@ -330,7 +329,9 @@ dist_proc_init(Parent) ->
         exit({shutdown, init_timeout})
     end.
 
-dist_proc_loop(#proxy_socket{node = Node, socket = Socket} = ProxySocket,
+dist_proc_loop(#proxy_socket{
+                  node = Node,
+                  socket = Socket} = ProxySocket,
                Parent,
                Debug) ->
     ProxySocket1 =
@@ -370,25 +371,20 @@ output_dist_data(#proxy_socket{
                     node = Node,
                     driver = Driver,
                     socket = Socket,
-                    dhandle = DHandle,
-                    output_buf = Buf} = ProxySocket) ->
+                    dhandle = DHandle} = ProxySocket) ->
     Blocked = is_blocked__internal(Node),
-    Ret = erlang:dist_ctrl_get_data(DHandle),
-    case Ret of
-        none when not Blocked ->
-            Driver:send(Socket, Buf),
-            erlang:dist_ctrl_get_data_notification(DHandle),
-            ProxySocket#proxy_socket{output_buf = []};
-        Data when not Blocked ->
-            Driver:send(Socket, [Buf, Data]),
-            output_dist_data(
-              ProxySocket#proxy_socket{output_buf = []});
-        none when Blocked ->
-            erlang:dist_ctrl_get_data_notification(DHandle),
-            ProxySocket;
-        Data when Blocked ->
-            output_dist_data(
-              ProxySocket#proxy_socket{output_buf = [Buf, Data]})
+    case Blocked of
+        false ->
+            case erlang:dist_ctrl_get_data(DHandle) of
+                none ->
+                    erlang:dist_ctrl_get_data_notification(DHandle),
+                    ProxySocket;
+                Data ->
+                    Driver:send(Socket, Data),
+                    output_dist_data(ProxySocket)
+            end;
+        true ->
+            ProxySocket
     end.
 
 input_dist_data(#proxy_socket{

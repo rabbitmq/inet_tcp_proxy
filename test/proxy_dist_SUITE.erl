@@ -49,7 +49,7 @@
 %% -------------------------------------------------------------------
 
 suite() ->
-    [{timetrap, {minutes, 1}}].
+    [{timetrap, {minutes, 10}}].
 
 all() ->
     [{group, non_parallel_tests}].
