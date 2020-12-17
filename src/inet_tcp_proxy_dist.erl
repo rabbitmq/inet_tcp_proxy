@@ -60,7 +60,6 @@
     initiated = false :: boolean(),
 
     dhandle = undefined :: any(),
-    input_buf = [] :: iodata(),
     node = undefined :: atom() | undefined
 }).
 
@@ -329,9 +328,7 @@ dist_proc_init(Parent) ->
         exit({shutdown, init_timeout})
     end.
 
-dist_proc_loop(#proxy_socket{
-                  node = Node,
-                  socket = Socket} = ProxySocket,
+dist_proc_loop(#proxy_socket{socket = Socket} = ProxySocket,
                Parent,
                Debug) ->
     ProxySocket1 =
@@ -343,14 +340,8 @@ dist_proc_loop(#proxy_socket{
         {tcp_closed, Socket} ->
             exit(normal);
         {notify_new_state, allowed} ->
-            %% Flush I/O buffers.
-            logger:debug(
-              ?MODULE_STRING ": Communication with ~s allowed; "
-              "flushing I/O buffers (~p)",
-              [Node, self()]),
-            input_dist_data(
-              output_dist_data(ProxySocket),
-              []);
+            %% Flush Erlang's output buffer if data is available.
+            output_dist_data(ProxySocket);
         {notify_new_state, _} ->
             ProxySocket;
         {info, From} ->
@@ -387,19 +378,10 @@ output_dist_data(#proxy_socket{
             ProxySocket
     end.
 
-input_dist_data(#proxy_socket{
-                   node = Node,
-                   dhandle = DHandle,
-                   input_buf = Buf} = ProxySocket,
+input_dist_data(#proxy_socket{dhandle = DHandle} = ProxySocket,
                 Data) ->
-    Blocked = is_blocked__internal(Node),
-    case Blocked of
-        false ->
-            erlang:dist_ctrl_put_data(DHandle, [Buf, Data]),
-            ProxySocket#proxy_socket{input_buf = []};
-        true ->
-            ProxySocket#proxy_socket{input_buf = [Buf, Data]}
-    end.
+    erlang:dist_ctrl_put_data(DHandle, Data),
+    ProxySocket.
 
 is_blocked__internal(Node) ->
     Blocked = is_blocked__internal1(Node),
@@ -416,12 +398,12 @@ is_blocked__internal(Node) ->
         allowed when Blocked ->
             put(DictKey, blocked),
             logger:debug(
-              ?MODULE_STRING ": Communication between ~s and ~s BLOCKED (~p)~n",
+              ?MODULE_STRING ": Communication from ~s to ~s BLOCKED (~p)~n",
               [node(), Node, self()]);
         blocked when not Blocked ->
             put(DictKey, allowed),
             logger:debug(
-              ?MODULE_STRING ": Communication between ~s and ~s allowed (~p)~n",
+              ?MODULE_STRING ": Communication from ~s to ~s allowed (~p)~n",
               [node(), Node, self()])
     end,
     Blocked.

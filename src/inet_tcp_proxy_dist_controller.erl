@@ -27,7 +27,7 @@ allow(Peer) when Peer =/= undefined ->
     case is_dist_proto_mod_configured() of
         true ->
             logger:debug(
-              ?MODULE_STRING ": Allowing connection between ~s and ~s",
+              ?MODULE_STRING ": Allowing connection from ~s to ~s",
               [node(), Peer]),
             Erased = persistent_term:erase(pt_blocked_pair(node(), Peer)),
             case Erased of
@@ -45,7 +45,7 @@ block(Peer) when Peer =/= undefined ->
     case is_dist_proto_mod_configured() of
         true ->
             logger:debug(
-              ?MODULE_STRING ": BLOCKING connection between ~s and ~s",
+              ?MODULE_STRING ": BLOCKING connection from ~s to ~s",
               [node(), Peer]),
             persistent_term:put(pt_blocked_pair(node(), Peer), true),
             notify_new_state(Peer, blocked);
