@@ -26,14 +26,12 @@
          send_large_message/1,
          three_nodes_with_proxy_on_two_only/0,
          three_nodes_with_proxy_on_two_only/1,
-         only_one_node_blocks_the_other/0,
-         only_one_node_blocks_the_other/1,
-         only_one_node_blocks_the_other__reversed/0,
-         only_one_node_blocks_the_other__reversed/1,
+         asymmetrical_block_works/0,
+         asymmetrical_block_works/1,
 
          test_basic_communication/2,
-         only_one_node_blocks_the_other/2,
-         only_one_node_blocks_the_other__reversed/2]).
+         asymmetrical_block_works/2
+        ]).
 
 -import(proxy_dist_test_lib,
         [send_to_tstcntrl/1,
@@ -49,7 +47,7 @@
 %% -------------------------------------------------------------------
 
 suite() ->
-    [{timetrap, {minutes, 1}}].
+    [{timetrap, {minutes, 10}}].
 
 all() ->
     [{group, non_parallel_tests}].
@@ -65,8 +63,7 @@ groups() ->
        proto_dist_is_configured_but_app_is_stopped,
        send_large_message,
        three_nodes_with_proxy_on_two_only,
-       only_one_node_blocks_the_other,
-       only_one_node_blocks_the_other__reversed]}
+       asymmetrical_block_works]}
     ].
 
 init_per_suite(Config) ->
@@ -391,49 +388,73 @@ test_basic_communication(Config, NHs) ->
      end
      || NH <- NHs].
 
-only_one_node_blocks_the_other() ->
+asymmetrical_block_works() ->
     [{doc,
-      "Verify that the proxy works when only one node blocks the "
-      "communication"}].
-only_one_node_blocks_the_other(Config) ->
-    gen_dist_test(only_one_node_blocks_the_other, Config).
+      "Verify that blocking one direction does not interfere with the "
+      "communication in the opposite direction"}].
+asymmetrical_block_works(Config) ->
+    gen_dist_test(asymmetrical_block_works, Config).
 
-only_one_node_blocks_the_other(
+asymmetrical_block_works(
   _Config,
   [#node_handle{nodename = N1} = NH1,
    #node_handle{nodename = N2} = NH2]) ->
     PingN1 = fun() -> net_adm:ping(N1) end,
     PingN2 = fun() -> net_adm:ping(N2) end,
 
+    %% Establishing the connection is not possible because it involves
+    %% bidirectional communication.
     block(NH1, [N2]),
-    pang = apply_on_test_node(NH1, PingN2),
-    pang = apply_on_test_node(NH2, PingN1),
+    ?assertEqual(pang, apply_on_test_node(NH1, PingN2)),
+    ?assertEqual(pang, apply_on_test_node(NH2, PingN1)),
 
+    %% Establishing the connection is now possible.
     allow(NH1, [N2]),
-    pong = apply_on_test_node(NH1, PingN2),
-    pong = apply_on_test_node(NH2, PingN1).
+    ?assertEqual(pong, apply_on_test_node(NH2, PingN1)),
+    ?assertEqual(pong, apply_on_test_node(NH1, PingN2)),
 
-only_one_node_blocks_the_other__reversed() ->
-    [{doc,
-      "Verify that the proxy works when only one node blocks the "
-      "communication"}].
-only_one_node_blocks_the_other__reversed(Config) ->
-    gen_dist_test(only_one_node_blocks_the_other__reversed, Config).
+    Ref1 = make_ref(),
+    Ref2 = make_ref(),
+    ForwardMsg = fun(Ref) ->
+                         fun() ->
+                                 send_to_tstcntrl({Ref, self()}),
+                                 receive Msg1 -> send_to_tstcntrl(Msg1) end,
+                                 receive Msg2 -> send_to_tstcntrl(Msg2) end
+                         end
+                 end,
+    spawn(fun() -> apply_on_test_node(NH1, ForwardMsg(Ref1)) end),
+    spawn(fun() -> apply_on_test_node(NH2, ForwardMsg(Ref2)) end),
+    Pid1 = receive {Ref1, P1} -> P1 end,
+    Pid2 = receive {Ref2, P2} -> P2 end,
 
-only_one_node_blocks_the_other__reversed(
-  _Config,
-  [#node_handle{nodename = N1} = NH1,
-   #node_handle{nodename = N2} = NH2]) ->
-    PingN1 = fun() -> net_adm:ping(N1) end,
-    PingN2 = fun() -> net_adm:ping(N2) end,
+    SendMsg = fun(Pid, Msg) ->
+                      fun() ->
+                              inet_tcp_proxy_dist_controller:info(),
+                              Pid ! Msg
+                      end
+              end,
+    Msg1 = {Ref1, take1},
+    Msg2 = {Ref2, take1},
+    apply_on_test_node(NH1, SendMsg(Pid2, Msg1)),
+    apply_on_test_node(NH2, SendMsg(Pid1, Msg2)),
+
+    receive Msg1 -> ok end,
+    receive Msg2 -> ok end,
 
     block(NH1, [N2]),
-    pang = apply_on_test_node(NH2, PingN1),
-    pang = apply_on_test_node(NH1, PingN2),
+    Msg3 = {Ref1, take2},
+    Msg4 = {Ref2, take2},
+    apply_on_test_node(NH1, SendMsg(Pid2, Msg3)),
+    apply_on_test_node(NH2, SendMsg(Pid1, Msg4)),
 
-    allow(NH1, [N2]),
-    pong = apply_on_test_node(NH2, PingN1),
-    pong = apply_on_test_node(NH1, PingN2).
+    ?assertEqual(
+       ok,
+       receive Msg3 -> msg_received_unexpectedly after 5000 -> ok end),
+    ?assertEqual(
+       ok,
+       receive Msg4 -> ok after 5000 -> msg_not_received_before_timeout end),
+
+    ok.
 
 %% -------------------------------------------------------------------
 %% Helpers.

@@ -60,8 +60,6 @@
     initiated = false :: boolean(),
 
     dhandle = undefined :: any(),
-    output_buf = [] :: iodata(),
-    input_buf = [] :: iodata(),
     node = undefined :: atom() | undefined
 }).
 
@@ -330,7 +328,7 @@ dist_proc_init(Parent) ->
         exit({shutdown, init_timeout})
     end.
 
-dist_proc_loop(#proxy_socket{node = Node, socket = Socket} = ProxySocket,
+dist_proc_loop(#proxy_socket{socket = Socket} = ProxySocket,
                Parent,
                Debug) ->
     ProxySocket1 =
@@ -342,14 +340,8 @@ dist_proc_loop(#proxy_socket{node = Node, socket = Socket} = ProxySocket,
         {tcp_closed, Socket} ->
             exit(normal);
         {notify_new_state, allowed} ->
-            %% Flush I/O buffers.
-            logger:debug(
-              ?MODULE_STRING ": Communication with ~s allowed; "
-              "flushing I/O buffers (~p)",
-              [Node, self()]),
-            input_dist_data(
-              output_dist_data(ProxySocket),
-              []);
+            %% Flush Erlang's output buffer if data is available.
+            output_dist_data(ProxySocket);
         {notify_new_state, _} ->
             ProxySocket;
         {info, From} ->
@@ -370,40 +362,26 @@ output_dist_data(#proxy_socket{
                     node = Node,
                     driver = Driver,
                     socket = Socket,
-                    dhandle = DHandle,
-                    output_buf = Buf} = ProxySocket) ->
-    Blocked = is_blocked__internal(Node),
-    Ret = erlang:dist_ctrl_get_data(DHandle),
-    case Ret of
-        none when not Blocked ->
-            Driver:send(Socket, Buf),
-            erlang:dist_ctrl_get_data_notification(DHandle),
-            ProxySocket#proxy_socket{output_buf = []};
-        Data when not Blocked ->
-            Driver:send(Socket, [Buf, Data]),
-            output_dist_data(
-              ProxySocket#proxy_socket{output_buf = []});
-        none when Blocked ->
-            erlang:dist_ctrl_get_data_notification(DHandle),
-            ProxySocket;
-        Data when Blocked ->
-            output_dist_data(
-              ProxySocket#proxy_socket{output_buf = [Buf, Data]})
-    end.
-
-input_dist_data(#proxy_socket{
-                   node = Node,
-                   dhandle = DHandle,
-                   input_buf = Buf} = ProxySocket,
-                Data) ->
+                    dhandle = DHandle} = ProxySocket) ->
     Blocked = is_blocked__internal(Node),
     case Blocked of
         false ->
-            erlang:dist_ctrl_put_data(DHandle, [Buf, Data]),
-            ProxySocket#proxy_socket{input_buf = []};
+            case erlang:dist_ctrl_get_data(DHandle) of
+                none ->
+                    erlang:dist_ctrl_get_data_notification(DHandle),
+                    ProxySocket;
+                Data ->
+                    Driver:send(Socket, Data),
+                    output_dist_data(ProxySocket)
+            end;
         true ->
-            ProxySocket#proxy_socket{input_buf = [Buf, Data]}
+            ProxySocket
     end.
+
+input_dist_data(#proxy_socket{dhandle = DHandle} = ProxySocket,
+                Data) ->
+    erlang:dist_ctrl_put_data(DHandle, Data),
+    ProxySocket.
 
 is_blocked__internal(Node) ->
     Blocked = is_blocked__internal1(Node),
@@ -420,12 +398,12 @@ is_blocked__internal(Node) ->
         allowed when Blocked ->
             put(DictKey, blocked),
             logger:debug(
-              ?MODULE_STRING ": Communication between ~s and ~s BLOCKED (~p)~n",
+              ?MODULE_STRING ": Communication from ~s to ~s BLOCKED (~p)~n",
               [node(), Node, self()]);
         blocked when not Blocked ->
             put(DictKey, allowed),
             logger:debug(
-              ?MODULE_STRING ": Communication between ~s and ~s allowed (~p)~n",
+              ?MODULE_STRING ": Communication from ~s to ~s allowed (~p)~n",
               [node(), Node, self()])
     end,
     Blocked.
