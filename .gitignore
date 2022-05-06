@@ -1,5 +1,6 @@
 *.beam
 /.erlang.mk/
+_build/*
 /.inet_tcp_proxy_dist.plt
 /deps/
 /ebin/
