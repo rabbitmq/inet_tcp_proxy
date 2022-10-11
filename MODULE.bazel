@@ -1,0 +1,10 @@
+module(
+    name = "inet_tcp_proxy_dist",
+    version = "0.1.0",
+    compatibility_level = 1,
+)
+
+bazel_dep(
+    name = "rules_erlang",
+    version = "3.8.0",
+)

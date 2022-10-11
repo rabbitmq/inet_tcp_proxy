@@ -1,0 +1,53 @@
+load("@rules_erlang//:erlang_app.bzl", "erlang_app", "test_erlang_app")
+load("@rules_erlang//:xref.bzl", "xref")
+load("@rules_erlang//:dialyze.bzl", "dialyze", "plt")
+load("@rules_erlang//:ct.bzl", "assert_suites", "ct_suite")
+
+NAME = "inet_tcp_proxy_dist"
+
+DESCRIPTION = "Erlang distribution proxy to simulate network failures"
+
+VERSION = "0.1.0"
+
+erlang_app(
+    app_description = DESCRIPTION,
+    app_name = NAME,
+    app_version = VERSION,
+)
+
+test_erlang_app(
+    app_description = DESCRIPTION,
+    app_name = NAME,
+    app_version = VERSION,
+)
+
+xref()
+
+plt(name = "base_plt")
+
+dialyze(
+    plt = ":base_plt",
+)
+
+suites = [
+    ct_suite(
+        name = "proxy_dist_SUITE",
+        additional_hdrs = [
+            "test/proxy_dist_test_lib.hrl",
+        ],
+        additional_srcs = [
+            "test/proxy_dist_test_lib.erl",
+        ],
+    ),
+]
+
+assert_suites(
+    suites,
+    glob(["test/**/*_SUITE.erl"]),
+)
+
+alias(
+    name = NAME,
+    actual = ":erlang_app",
+    visibility = ["//visibility:public"],
+)
