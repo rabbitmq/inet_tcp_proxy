@@ -7,3 +7,5 @@ _build/*
 /inet_tcp_proxy_dist.d
 /logs/
 /xrefr
+
+/bazel-*
