@@ -1,0 +1,38 @@
+name: Test
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        otp:
+        - "24.3"
+        - "25.1"
+        extra_flags:
+        - --experimental_enable_bzlmod
+        - ""
+    steps:
+    - name: CHECKOUT
+      uses: actions/checkout@v2
+    - name: CONFIGURE ERLANG
+      uses: erlef/setup-beam@v1
+      with:
+        otp-version: ${{ matrix.otp }}
+    - name: TEST
+      run: |
+        bazelisk test //... \
+          --color=yes ${{ matrix.extra_flags }}
+    - name: RESOVLE TEST LOGS PATH
+      run: |
+        echo "::set-output name=LOGS_PATH::$(readlink -f bazel-testlogs)"
+      id: resolve-test-logs-path
+    - name: CAPTURE TEST LOGS
+      uses: actions/upload-artifact@v2
+      with:
+        name: bazel-testlogs-${{ matrix.otp }}${{ matrix.extra_flags }}
+        path: ${{ steps.resolve-test-logs-path.outputs.LOGS_PATH }}/*
