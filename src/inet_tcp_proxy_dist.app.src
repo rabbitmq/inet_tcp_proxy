@@ -1,0 +1,9 @@
+{application, inet_tcp_proxy_dist,
+ [{description, "Erlang distribution proxy to simulate network failures"},
+  {vsn, "0.1.0"},
+  {registered, [inet_tcp_proxy_dist_sup]},
+  {applications, [kernel, stdlib]},
+  {env, []},
+  {mod, {inet_tcp_proxy_dist_app, []}},
+  {modules, []},
+  {licenses, ["Apache-2.0", "MPL-2.0"]}]}.
